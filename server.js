@@ -12,7 +12,8 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/brahmastra-club', {
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/brahmastra-club';
+mongoose.connect(MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
 })
@@ -473,36 +474,6 @@ app.get('/api/dashboard/stats', authenticateToken, authorizeAdmin, async (req, r
     } catch (error) {
         console.error('Get dashboard stats error:', error);
         res.status(500).json({ error: 'Failed to fetch dashboard statistics' });
-    }
-});
-
-// ==================== INITIALIZATION ROUTE ====================
-
-// Initialize default admin (Only run once)
-app.post('/api/init', async (req, res) => {
-    try {
-        // Check if admin already exists
-        const existingAdmin = await Member.findOne({ memberId: 'brahmastra01' });
-        if (existingAdmin) {
-            return res.status(400).json({ error: 'Admin already initialized' });
-        }
-
-        // Create default admin
-        const hashedPassword = await bcrypt.hash('Accen@10090', 10);
-        const admin = new Member({
-            memberId: 'brahmastra01',
-            memberName: 'Admin User',
-            password: hashedPassword,
-            role: 'admin',
-            monthlyPayments: []
-        });
-
-        await admin.save();
-
-        res.json({ message: 'Default admin created successfully' });
-    } catch (error) {
-        console.error('Initialization error:', error);
-        res.status(500).json({ error: 'Failed to initialize' });
     }
 });
 
