@@ -95,7 +95,8 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         // Find member
-        const member = await Member.findOne({ memberId });
+       // const member = await Member.findOne({ memberId });
+        const member = await Member.findOne({ memberId: userId });
         if (!member) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
