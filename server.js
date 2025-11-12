@@ -35,7 +35,8 @@ const memberSchema = new mongoose.Schema({
         amount: { type: Number, default: 100 },
         paidDate: Date
     }],
-    createdAt: { type: Date, default: Date.now }
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
 });
 
 // Expense Schema
@@ -95,7 +96,6 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         // Find member
-       // const member = await Member.findOne({ memberId });
         const member = await Member.findOne({ memberId: userId });
         if (!member) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -235,7 +235,179 @@ app.post('/api/members', authenticateToken, authorizeAdmin, async (req, res) => 
     }
 });
 
-// Delete member (Admin only)
+// ==================== NEW: EDIT MEMBER (All fields) ====================
+app.put('/api/members/:memberId', authenticateToken, authorizeAdmin, async (req, res) => {
+    try {
+        const { memberId } = req.params;
+        const { memberName, role, password } = req.body;
+
+        // Prevent editing main admin
+        if (memberId === 'brahmastra01') {
+            return res.status(403).json({ error: 'Cannot edit main admin account' });
+        }
+
+        // Check if member exists
+        const member = await Member.findOne({ memberId });
+        if (!member) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+
+        // Validate input
+        if (memberName && !memberName.trim()) {
+            return res.status(400).json({ error: 'Member name cannot be empty' });
+        }
+
+        if (role && !['member', 'admin'].includes(role)) {
+            return res.status(400).json({ error: 'Invalid role. Must be "member" or "admin"' });
+        }
+
+        // Update member name
+        if (memberName && memberName.trim()) {
+            member.memberName = memberName.trim();
+        }
+
+        // Update role
+        if (role) {
+            const oldRole = member.role;
+            member.role = role;
+            console.log(`🔐 [ROLE CHANGE] ${memberId}: ${oldRole} → ${role}`);
+        }
+
+        // Update password if provided
+        if (password && password.trim()) {
+            const salt = await bcrypt.genSalt(10);
+            member.password = await bcrypt.hash(password, salt);
+            console.log(`🔐 [PASSWORD UPDATE] ${memberId} password updated`);
+        }
+
+        // Update the updatedAt timestamp
+        member.updatedAt = new Date();
+
+        // Save the updated member
+        await member.save();
+
+        console.log(`✅ Member ${memberId} updated successfully`);
+
+        res.json({
+            message: 'Member updated successfully',
+            member: {
+                memberId: member.memberId,
+                memberName: member.memberName,
+                role: member.role,
+                updatedAt: member.updatedAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Member update error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== NEW: GET SINGLE MEMBER ====================
+app.get('/api/members/:memberId', authenticateToken, authorizeAdmin, async (req, res) => {
+    try {
+        const { memberId } = req.params;
+        const member = await Member.findOne({ memberId }).select('-password');
+        
+        if (!member) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+
+        res.json(member);
+    } catch (error) {
+        console.error('Get member error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== NEW: CHANGE ROLE ONLY ====================
+app.put('/api/members/:memberId/role', authenticateToken, authorizeAdmin, async (req, res) => {
+    try {
+        const { memberId } = req.params;
+        const { role } = req.body;
+
+        // Validate role
+        if (!['member', 'admin'].includes(role)) {
+            return res.status(400).json({ error: 'Invalid role. Must be "member" or "admin"' });
+        }
+
+        // Prevent editing main admin
+        if (memberId === 'brahmastra01') {
+            return res.status(403).json({ error: 'Cannot change main admin role' });
+        }
+
+        const member = await Member.findOne({ memberId });
+        if (!member) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+
+        const oldRole = member.role;
+        member.role = role;
+        member.updatedAt = new Date();
+        await member.save();
+
+        console.log(`🔐 [ROLE CHANGE] ${memberId}: ${oldRole} → ${role}`);
+
+        res.json({
+            message: `Member role changed from ${oldRole} to ${role}`,
+            member: {
+                memberId: member.memberId,
+                memberName: member.memberName,
+                role: member.role
+            }
+        });
+
+    } catch (error) {
+        console.error('Role change error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== NEW: CHANGE PASSWORD ONLY ====================
+app.put('/api/members/:memberId/password', authenticateToken, authorizeAdmin, async (req, res) => {
+    try {
+        const { memberId } = req.params;
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'New password must be at least 6 characters' });
+        }
+
+        const member = await Member.findOne({ memberId });
+        if (!member) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+
+        // Verify current password
+        const isPasswordValid = await bcrypt.compare(currentPassword, member.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ error: 'Current password is incorrect' });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        member.password = await bcrypt.hash(newPassword, salt);
+        member.updatedAt = new Date();
+        await member.save();
+
+        console.log(`🔐 [PASSWORD CHANGE] ${memberId} password updated`);
+
+        res.json({
+            message: 'Password changed successfully'
+        });
+
+    } catch (error) {
+        console.error('Password change error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== DELETE MEMBER ====================
 app.delete('/api/members/:memberId', authenticateToken, authorizeAdmin, async (req, res) => {
     try {
         const { memberId } = req.params;
